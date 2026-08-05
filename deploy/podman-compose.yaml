@@ -85,6 +85,58 @@ services:
     networks:
       - ticketing-net
 
+  # --- Servicios "full": la API y el frontend containerizados. ---
+  # Detrás de un profile para no interferir con el flujo de desarrollo
+  # habitual (go run / pnpm dev). Se activan solo con:
+  #   podman-compose --profile full up -d --build
+  api:
+    build:
+      context: ../api
+      dockerfile: Containerfile
+    container_name: ticketing-api
+    restart: unless-stopped
+    profiles: ["full"]
+    environment:
+      API_PORT: "8080"
+      DATABASE_URL: postgres://ticketing:ticketing_dev_password@postgres:5432/ticketing?sslmode=disable
+      REDIS_ADDR: redis:6379
+      RABBITMQ_URL: amqp://ticketing:ticketing_dev_password@rabbitmq:5672/
+      RESERVATION_TTL_SECONDS: "600"
+      RESERVATION_WORKERS: "5"
+      SWEEP_INTERVAL_SECONDS: "30"
+      ALLOWED_ORIGINS: http://localhost:3000,http://localhost:8081
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - ticketing-net
+
+  frontend:
+    build:
+      context: ../frontend
+      dockerfile: Containerfile
+    container_name: ticketing-frontend
+    restart: unless-stopped
+    profiles: ["full"]
+    environment:
+      # El navegador del usuario es quien llama a estas URLs
+      # directamente, así que siguen siendo localhost aunque el
+      # frontend corra dentro de un contenedor.
+      NUXT_PUBLIC_API_BASE: http://localhost:8080
+      NUXT_PUBLIC_WS_BASE: ws://localhost:8080
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
+    networks:
+      - ticketing-net
+
 networks:
   ticketing-net:
     driver: bridge

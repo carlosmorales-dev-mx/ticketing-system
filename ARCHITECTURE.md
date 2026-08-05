@@ -46,11 +46,9 @@ flowchart TB
 ```
 
 ## Regla de dependencias
+adapters → application → domain
+(nunca al revés)
 
-```
-adapters  →  application  →  domain
-   (nunca al revés)
-```
 
 - `domain` no importa nada fuera de Go estándar.
 - `application` solo importa `domain` y define interfaces (`port/in`, `port/out`).
@@ -58,28 +56,25 @@ adapters  →  application  →  domain
 - `cmd/api/main.go` es el único punto que conoce todas las capas a la vez (composition root / inyección de dependencias manual).
 
 ## Estructura de carpetas
-
-```
 api/
-├── cmd/api/main.go              # composition root
+├── cmd/api/main.go # composition root
 ├── internal/
-│   ├── domain/                  # entidades + reglas de negocio puras
-│   │   ├── seat/                # Seat: AVAILABLE -> RESERVED -> SOLD
-│   │   ├── reservation/         # Reservation + TTL de 10 min
-│   │   ├── event/
-│   │   ├── ticket/
-│   │   └── shared/               # Value Objects (ID) + DomainError
-│   ├── application/
-│   │   ├── port/in/             # interfaces de casos de uso
-│   │   ├── port/out/            # interfaces hacia infraestructura
-│   │   └── usecase/             # implementación de los casos de uso
-│   └── adapters/
-│       ├── in/http/             # REST (handlers, middleware, dto)
-│       ├── in/websocket/        # tiempo real
-│       ├── in/amqpconsumer/     # sala de espera virtual
-│       └── out/{postgres,redis,rabbitmq}/
+│ ├── domain/ # entidades + reglas de negocio puras
+│ │ ├── seat/ # Seat: AVAILABLE -> RESERVED -> SOLD
+│ │ ├── reservation/ # Reservation + TTL de 10 min
+│ │ ├── event/
+│ │ ├── ticket/
+│ │ └── shared/ # Value Objects (ID) + DomainError
+│ ├── application/
+│ │ ├── port/in/ # interfaces de casos de uso
+│ │ ├── port/out/ # interfaces hacia infraestructura
+│ │ └── usecase/ # implementación de los casos de uso
+│ └── adapters/
+│ ├── in/http/ # REST (handlers, middleware, dto)
+│ ├── in/websocket/ # tiempo real
+│ ├── in/amqpconsumer/ # sala de espera virtual
+│ └── out/{postgres,redis,rabbitmq}/
 └── openapi.yaml
-```
 
 ## Flujo de negocio: Reservar → Esperar 10 min → Pagar
 
@@ -113,6 +108,3 @@ sequenceDiagram
         end
     end
 ```
-
-Este mismo diagrama debería vivir también en el `README.md` principal
-del repo (ver punto 4 del checklist de documentación).

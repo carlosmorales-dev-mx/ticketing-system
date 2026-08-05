@@ -43,6 +43,18 @@ type ReleaseExpiredReservationUseCase interface {
 	Execute(ctx context.Context, reservationID shared.ID) error
 }
 
+type CancelReservationCommand struct {
+	ReservationID shared.ID
+}
+
+// CancelReservationUseCase es lo que le da salida al usuario: si
+// reservó por error, se arrepintió, o simplemente quiere elegir otro
+// asiento, puede liberar su propia reserva sin esperar a que expire
+// sola a los 10 minutos.
+type CancelReservationUseCase interface {
+	Execute(ctx context.Context, cmd CancelReservationCommand) error
+}
+
 type SeatSummary struct {
 	SeatID shared.ID
 	Row    int

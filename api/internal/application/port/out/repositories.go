@@ -2,6 +2,7 @@ package out
 
 import (
 	"context"
+	"time"
 
 	"github.com/carlosmorales-dev-mx/ticketing-system/api/internal/domain/reservation"
 	"github.com/carlosmorales-dev-mx/ticketing-system/api/internal/domain/seat"
@@ -31,6 +32,12 @@ type ReservationRepository interface {
 	Save(ctx context.Context, r *reservation.Reservation) error
 	FindByID(ctx context.Context, id shared.ID) (*reservation.Reservation, error)
 	UpdateStatus(ctx context.Context, id shared.ID, status reservation.Status) error
+	// FindExpiredPending es la red de seguridad del sistema: las
+	// keyspace notifications de Redis son best-effort, así que un
+	// barrido periódico contra este método (ver cmd/api/main.go)
+	// libera cualquier reserva PENDING cuyo TTL ya pasó pero cuyo
+	// evento de expiración se perdió (reinicio de Redis, red, etc.).
+	FindExpiredPending(ctx context.Context, before time.Time) ([]shared.ID, error)
 }
 
 type TicketRepository interface {

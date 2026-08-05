@@ -79,7 +79,7 @@ db-shell: ## Abre una shell psql dentro del contenedor de Postgres
 .PHONY: db-reset
 db-reset: ## Reinicia solo la base de datos (borra y reaplica migraciones)
 	$(COMPOSE) stop postgres
-	$(COMPOSE) rm -f postgres
+	podman rm -f ticketing-postgres
 	podman volume rm -f deploy_postgres_data
 	$(COMPOSE) up -d postgres
 
@@ -96,9 +96,40 @@ docs: ## Abre Swagger UI (requiere: make up)
 openapi-validate: ## Valida que openapi.yaml es sintácticamente correcto
 	python3 -c "import yaml; yaml.safe_load(open('$(API_DIR)/openapi.yaml')); print('OpenAPI YAML válido ✓')"
 
+.PHONY: smoke-test
+smoke-test: ## Prueba end-to-end: reservas concurrentes + verificación anti-doble-venta (requiere: make run en otra terminal)
+	./scripts/smoke_test.sh
+
+.PHONY: up-full
+up-full: ## Levanta TODO en contenedores (infra + API + frontend) para una demo de un solo comando
+	$(COMPOSE) --profile full up -d --build
+
+.PHONY: down-full
+down-full: ## Para los contenedores del profile "full" (api + frontend)
+	$(COMPOSE) --profile full down
+
+# ---------------------------------------------------------------------------
+# Frontend (Nuxt)
+# ---------------------------------------------------------------------------
+
+.PHONY: frontend-install
+frontend-install: ## Instala las dependencias del frontend con pnpm
+	cd frontend && pnpm install
+
+.PHONY: frontend-dev
+frontend-dev: ## Arranca solo el frontend Nuxt (pnpm dev, puerto 3000)
+	cd frontend && pnpm dev
+
 # ---------------------------------------------------------------------------
 # Atajo para el flujo típico de desarrollo
 # ---------------------------------------------------------------------------
 
 .PHONY: dev
-dev: up run ## make up + make run en un solo comando
+dev: up run ## make up + make run (solo backend) en un solo comando
+
+.PHONY: dev-full
+dev-full: up ## Infra + API + frontend, TODO en un solo comando/terminal (Ctrl+C detiene ambos)
+	@trap 'kill 0' EXIT INT TERM; \
+	(cd $(API_DIR) && go run ./cmd/api) & \
+	(cd frontend && pnpm dev) & \
+	wait

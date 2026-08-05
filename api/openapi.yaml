@@ -1,0 +1,325 @@
+openapi: 3.0.3
+info:
+  title: Sistema de Venta de Entradas — API
+  description: >
+    API de alta concurrencia para venta de entradas. Garantiza que un
+    mismo asiento nunca puede venderse dos veces, incluso bajo carga
+    concurrente extrema, mediante locks transaccionales atómicos en
+    PostgreSQL. Las reservas expiran automáticamente a los 10 minutos
+    si no se confirma el pago.
+  version: "1.0.0"
+  contact:
+    name: Carlos Morales
+    url: https://github.com/carlosmorales-dev-mx
+
+servers:
+  - url: http://localhost:8080
+    description: Entorno local de desarrollo
+
+tags:
+  - name: Seats
+    description: Consulta de disponibilidad de asientos
+  - name: Reservations
+    description: Reserva y confirmación de pago (el flujo central del sistema)
+  - name: Health
+    description: Estado del servicio
+
+paths:
+  /health:
+    get:
+      tags: [Health]
+      summary: Estado del servicio
+      operationId: healthCheck
+      responses:
+        "200":
+          description: El servicio está operativo
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+
+  /events/{eventId}/seats:
+    get:
+      tags: [Seats]
+      summary: Lista los asientos de un evento y su disponibilidad
+      operationId: listSeats
+      parameters:
+        - $ref: "#/components/parameters/EventId"
+      responses:
+        "200":
+          description: Lista de asientos con su estado actual
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Seat"
+              example:
+                - seat_id: "7c9e6679-7425-40de-944b-e07fc1f90ae7"
+                  row: 1
+                  label: "A"
+                  status: AVAILABLE
+                - seat_id: "8d0f7780-8536-51ef-a55c-f18cd2c01bf8"
+                  row: 1
+                  label: "B"
+                  status: RESERVED
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /reservations:
+    post:
+      tags: [Reservations]
+      summary: Reserva un asiento (ventana de 10 minutos para pagar)
+      description: >
+        Intenta bloquear un asiento de forma atómica. Si dos usuarios
+        intentan reservar el mismo asiento al mismo tiempo, exactamente
+        uno recibirá `201 Created` y el resto recibirá `409 Conflict`
+        con `SEAT_ALREADY_RESERVED`. La reserva expira automáticamente
+        a los 10 minutos si no se confirma el pago vía
+        `POST /reservations/{id}/confirm`.
+      operationId: reserveSeat
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReserveSeatRequest"
+            example:
+              event_id: "123e4567-e89b-12d3-a456-426614174000"
+              seat_id: "7c9e6679-7425-40de-944b-e07fc1f90ae7"
+              user_id: "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d"
+      responses:
+        "201":
+          description: Asiento reservado correctamente
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReserveSeatResponse"
+              example:
+                reservation_id: "505074c4-1600-41d0-bd32-6407ddf9b8bf"
+                expires_in: 600
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "409":
+          description: >
+            El asiento ya no está disponible — otro usuario ganó la
+            carrera de la reserva. Este es el caso de borde central
+            del sistema bajo concurrencia.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error: SEAT_ALREADY_RESERVED
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  /reservations/{reservationId}/confirm:
+    post:
+      tags: [Reservations]
+      summary: Confirma el pago de una reserva y emite el ticket
+      description: >
+        Solo puede confirmarse una reserva en estado `PENDING`. Si la
+        reserva ya expiró (pasaron los 10 minutos), ya fue confirmada
+        antes, o fue cancelada, devuelve `409 RESERVATION_NOT_PENDING`.
+      operationId: confirmPayment
+      parameters:
+        - $ref: "#/components/parameters/ReservationId"
+      responses:
+        "200":
+          description: Pago confirmado, ticket emitido
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConfirmPaymentResponse"
+              example:
+                ticket_id: "18dfa2e1-4455-47fe-adc7-94f84c0a483c"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          description: La reserva no existe
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error: RESERVATION_NOT_FOUND
+        "409":
+          description: >
+            La reserva no está en estado PENDING (ya expiró, ya se
+            confirmó, o se canceló).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error: RESERVATION_NOT_PENDING
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  /reservations/{reservationId}/cancel:
+    post:
+      tags: [Reservations]
+      summary: Cancela una reserva propia antes de que expire
+      description: >
+        Libera voluntariamente un asiento reservado sin esperar los 10
+        minutos del TTL. Solo puede cancelarse una reserva en estado
+        `PENDING`.
+      operationId: cancelReservation
+      parameters:
+        - $ref: "#/components/parameters/ReservationId"
+      responses:
+        "204":
+          description: Reserva cancelada, el asiento vuelve a AVAILABLE
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          description: La reserva no existe
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error: RESERVATION_NOT_FOUND
+        "409":
+          description: La reserva no está en estado PENDING
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error: RESERVATION_NOT_PENDING
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+components:
+  parameters:
+    EventId:
+      name: eventId
+      in: path
+      required: true
+      description: UUID del evento
+      schema:
+        type: string
+        format: uuid
+      example: "123e4567-e89b-12d3-a456-426614174000"
+    ReservationId:
+      name: reservationId
+      in: path
+      required: true
+      description: UUID de la reserva
+      schema:
+        type: string
+        format: uuid
+      example: "505074c4-1600-41d0-bd32-6407ddf9b8bf"
+
+  schemas:
+    Seat:
+      type: object
+      properties:
+        seat_id:
+          type: string
+          format: uuid
+          example: "7c9e6679-7425-40de-944b-e07fc1f90ae7"
+        row:
+          type: integer
+          example: 12
+        label:
+          type: string
+          description: Letra del asiento dentro de la fila
+          example: "C"
+        status:
+          type: string
+          enum: [AVAILABLE, RESERVED, SOLD]
+          example: AVAILABLE
+
+    ReserveSeatRequest:
+      type: object
+      required: [event_id, seat_id, user_id]
+      properties:
+        event_id:
+          type: string
+          format: uuid
+          description: UUID del evento al que pertenece el asiento
+          example: "123e4567-e89b-12d3-a456-426614174000"
+        seat_id:
+          type: string
+          format: uuid
+          description: UUID del asiento a reservar
+          example: "7c9e6679-7425-40de-944b-e07fc1f90ae7"
+        user_id:
+          type: string
+          format: uuid
+          description: UUID del usuario que realiza la reserva
+          example: "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d"
+
+    ReserveSeatResponse:
+      type: object
+      properties:
+        reservation_id:
+          type: string
+          format: uuid
+          example: "505074c4-1600-41d0-bd32-6407ddf9b8bf"
+        expires_in:
+          type: integer
+          description: Segundos restantes antes de que expire la reserva
+          example: 600
+
+    ConfirmPaymentResponse:
+      type: object
+      properties:
+        ticket_id:
+          type: string
+          format: uuid
+          example: "18dfa2e1-4455-47fe-adc7-94f84c0a483c"
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+          description: Código de error estable, apto para lógica de cliente
+          example: SEAT_ALREADY_RESERVED
+
+    ValidationErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+          example: INVALID_SEAT_ID
+        message:
+          type: string
+          example: "El campo 'seat_id' debe ser un UUID válido"
+
+  responses:
+    BadRequest:
+      description: >
+        El payload no pasó la validación. El campo `error` indica
+        exactamente cuál fue: `INVALID_EVENT_ID`, `INVALID_SEAT_ID`,
+        `INVALID_USER_ID`, `INVALID_RESERVATION_ID` o `INVALID_JSON_BODY`.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ValidationErrorResponse"
+
+    TooManyRequests:
+      description: >
+        Se superó el límite de peticiones por IP (rate limiting).
+        Reintentar tras el número de segundos indicado en la cabecera
+        `Retry-After`.
+      headers:
+        Retry-After:
+          description: Segundos a esperar antes de reintentar
+          schema:
+            type: integer
+            example: 1
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            error: RATE_LIMITED
