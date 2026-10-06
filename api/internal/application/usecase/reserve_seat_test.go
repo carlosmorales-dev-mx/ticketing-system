@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/carlosmorales-dev-mx/ticketing-system/api/internal/application/usecase"
 	usecasein "github.com/carlosmorales-dev-mx/ticketing-system/api/internal/application/port/in"
+	"github.com/carlosmorales-dev-mx/ticketing-system/api/internal/application/usecase"
 	"github.com/carlosmorales-dev-mx/ticketing-system/api/internal/domain/reservation"
 	"github.com/carlosmorales-dev-mx/ticketing-system/api/internal/domain/seat"
 	"github.com/carlosmorales-dev-mx/ticketing-system/api/internal/domain/shared"
@@ -21,6 +21,7 @@ import (
 type fakeSeatRepo struct {
 	reserveSucceeds bool
 	released        bool
+	tryCalls        int
 }
 
 func (f *fakeSeatRepo) FindByID(ctx context.Context, id shared.ID) (*seat.Seat, error) {
@@ -30,6 +31,7 @@ func (f *fakeSeatRepo) ListByEvent(ctx context.Context, eventID shared.ID) ([]*s
 	return nil, nil
 }
 func (f *fakeSeatRepo) TryReserve(ctx context.Context, seatID shared.ID) (bool, error) {
+	f.tryCalls++
 	return f.reserveSucceeds, nil
 }
 func (f *fakeSeatRepo) Release(ctx context.Context, seatID shared.ID) error {
@@ -41,6 +43,7 @@ func (f *fakeSeatRepo) MarkSold(ctx context.Context, seatID shared.ID) error { r
 type fakeReservationRepo struct {
 	saveErr error
 	saved   *reservation.Reservation
+	pending int // lo que devuelve CountPendingByUser
 }
 
 func (f *fakeReservationRepo) Save(ctx context.Context, r *reservation.Reservation) error {
@@ -55,6 +58,10 @@ func (f *fakeReservationRepo) UpdateStatus(ctx context.Context, id shared.ID, st
 }
 func (f *fakeReservationRepo) FindExpiredPending(ctx context.Context, before time.Time) ([]shared.ID, error) {
 	return nil, nil
+}
+
+func (f *fakeReservationRepo) CountPendingByUser(ctx context.Context, eventID, userID shared.ID) (int, error) {
+	return f.pending, nil
 }
 
 type fakeCache struct {
@@ -147,5 +154,46 @@ func TestReserveSeatUseCase_Execute_SeatAlreadyReserved_ReturnsDomainError(t *te
 	}
 	if cache.setCalled {
 		t.Fatal("no debería haberse registrado TTL si el asiento no estaba disponible")
+	}
+}
+
+// Regla de negocio: máximo reservation.MaxPendingPerUser asientos
+// apartados a la vez. Con el tope alcanzado ni siquiera se toca el
+// asiento (TryReserve no debe llamarse).
+func TestReserveSeatUseCase_Execute_UserAtLimit_ReturnsMaxSeatsError(t *testing.T) {
+	seatRepo := &fakeSeatRepo{reserveSucceeds: true}
+	resRepo := &fakeReservationRepo{pending: reservation.MaxPendingPerUser}
+	cache := &fakeCache{}
+
+	uc := usecase.NewReserveSeatUseCase(seatRepo, resRepo, cache, &fakePublisher{}, &fakeNotifier{})
+
+	_, err := uc.Execute(context.Background(), usecasein.ReserveSeatCommand{
+		EventID: shared.NewID(),
+		SeatID:  shared.NewID(),
+		UserID:  shared.NewID(),
+	})
+
+	var domainErr *shared.DomainError
+	if !errors.As(err, &domainErr) || domainErr.Code != "MAX_SEATS_PER_USER" {
+		t.Fatalf("se esperaba MAX_SEATS_PER_USER, se obtuvo: %v", err)
+	}
+	if seatRepo.tryCalls != 0 {
+		t.Fatalf("no debería intentar reservar el asiento, TryReserve se llamó %d vez/veces", seatRepo.tryCalls)
+	}
+	if resRepo.saved != nil || cache.setCalled {
+		t.Fatal("no debería guardarse reserva ni TTL al pasar el límite")
+	}
+}
+
+func TestReserveSeatUseCase_Execute_UserBelowLimit_Succeeds(t *testing.T) {
+	seatRepo := &fakeSeatRepo{reserveSucceeds: true}
+	resRepo := &fakeReservationRepo{pending: reservation.MaxPendingPerUser - 1}
+
+	uc := usecase.NewReserveSeatUseCase(seatRepo, resRepo, &fakeCache{}, &fakePublisher{}, &fakeNotifier{})
+
+	if _, err := uc.Execute(context.Background(), usecasein.ReserveSeatCommand{
+		EventID: shared.NewID(), SeatID: shared.NewID(), UserID: shared.NewID(),
+	}); err != nil {
+		t.Fatalf("con %d reservas debería poder apartar la última: %v", resRepo.pending, err)
 	}
 }

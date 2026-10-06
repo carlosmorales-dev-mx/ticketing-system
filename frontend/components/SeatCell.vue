@@ -1,8 +1,27 @@
 <script setup lang="ts">
 import type { Seat } from "~/types/ticketing";
 
-const props = defineProps<{ seat: Seat; disabled: boolean; isMine?: boolean }>();
+const props = defineProps<{
+  seat: Seat;
+  disabled: boolean;
+  isMine?: boolean;
+  /** Desplazamiento vertical en px para curvar la fila hacia el escenario. */
+  offset?: number;
+}>();
 const emit = defineEmits<{ select: [seat: Seat]; focus: [] }>();
+
+const STATUS_TEXT: Record<Seat["status"], string> = {
+  AVAILABLE: "libre",
+  RESERVED: "apartado",
+  SOLD: "vendido",
+};
+
+const description = computed(() => {
+  const base = `Fila ${props.seat.row}, asiento ${props.seat.label}`;
+  return props.isMine
+    ? `${base}, tu lugar. Clic para ir al pago`
+    : `${base}, ${STATUS_TEXT[props.seat.status]}`;
+});
 
 function handleClick() {
   if (props.isMine) {
@@ -11,81 +30,104 @@ function handleClick() {
   }
   emit("select", props.seat);
 }
+
+// Un destello breve cuando el asiento cambia de estado (por ejemplo,
+// cuando llega una actualización por WebSocket de otra persona).
+const flashing = ref(false);
+let flashTimer: ReturnType<typeof setTimeout> | null = null;
+watch(
+  () => props.seat.status,
+  () => {
+    flashing.value = true;
+    if (flashTimer) clearTimeout(flashTimer);
+    flashTimer = setTimeout(() => (flashing.value = false), 1000);
+  }
+);
+onUnmounted(() => {
+  if (flashTimer) clearTimeout(flashTimer);
+});
 </script>
 
 <template>
   <button
     class="seat"
-    :class="[props.seat.status.toLowerCase(), { mine: props.isMine }]"
+    :class="[props.seat.status.toLowerCase(), { mine: props.isMine, flash: flashing }]"
+    :style="{ '--o': `${props.offset ?? 0}px` }"
     :disabled="!props.isMine && (props.disabled || props.seat.status !== 'AVAILABLE')"
-    :title="props.isMine ? 'Este es tu asiento reservado — clic para ir al pago' : `Fila ${props.seat.row}, Asiento ${props.seat.label} — ${props.seat.status}`"
+    :title="description"
+    :aria-label="description"
+    type="button"
     @click="handleClick"
   >
-    <span v-if="props.seat.status !== 'SOLD'">{{ props.seat.label }}</span>
+    <span v-if="props.seat.status !== 'SOLD'" aria-hidden="true">{{ props.seat.label }}</span>
   </button>
 </template>
 
 <style scoped>
 .seat {
-  width: 40px;
-  height: 40px;
-  border-radius: 4px;
-  border: 2px solid var(--text-dark);
-  font-family: var(--font-mono);
+  width: var(--seat, 34px);
+  height: var(--seat, 34px);
+  border-radius: 50%;
+  border: 2px solid transparent;
+  background: var(--seat-free);
+  color: var(--bg);
+  font-family: var(--font-body);
+  font-size: 0.72rem;
   font-weight: 700;
-  font-size: 0.9rem;
+  display: grid;
+  place-items: center;
+  padding: 0;
   cursor: pointer;
-  transition: var(--transition);
-  color: var(--text-dark);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: transparent;
-  box-shadow: 3px 3px 0px rgba(0, 0, 0, 0.3);
-  position: relative;
+  transform: translateY(var(--o, 0px));
+  transition: background-color 0.15s, transform 0.15s, box-shadow 0.15s;
+}
+.seat:hover:not(:disabled) {
+  background: var(--gold);
+  transform: translateY(calc(var(--o, 0px) - 2px)) scale(1.1);
+}
+.seat:disabled {
+  cursor: default;
 }
 
-.seat.available {
-  background: var(--cyan);
-  box-shadow: 3px 3px 0px var(--text-dark);
-}
-.seat.available:hover:not(:disabled) {
-  transform: translate(-3px, -3px);
-  box-shadow: 6px 6px 0px var(--text-dark), 0 0 20px var(--cyan);
-  background: #ffffff;
-  z-index: 2;
-}
-.seat.available:active:not(:disabled) {
-  transform: translate(3px, 3px);
-  box-shadow: 0px 0px 0px var(--text-dark);
-}
-
+/* Apartado por otra persona */
 .seat.reserved {
-  background: var(--pink);
-  color: #fff;
-  box-shadow: 3px 3px 0px var(--text-dark), 0 0 20px var(--pink);
-  transform: scale(1.05);
+  background: transparent;
+  border: 2px dashed rgba(233, 189, 60, 0.7);
+  color: var(--gold-soft);
 }
-
-.seat.mine {
-  outline: 3px solid var(--cyan);
-  outline-offset: 3px;
-  cursor: pointer;
-}
-
 .seat.sold {
-  background: var(--grey);
-  color: #666;
-  cursor: not-allowed;
-  box-shadow: inset 0 0 10px #000;
-  background-image: repeating-linear-gradient(45deg, #3a3a4a 0px, #3a3a4a 4px, #2a2a3a 4px, #2a2a3a 8px);
-  border-color: #222;
-  transform: none !important;
+  background: var(--seat-sold);
+  color: transparent;
+}
+/* Tu lugar */
+.seat.mine {
+  background: var(--red-hi);
+  border-color: transparent;
+  color: var(--text);
+  cursor: pointer;
+  box-shadow: 0 0 0 4px rgba(225, 58, 73, 0.3), 0 0 18px rgba(225, 58, 73, 0.75);
+}
+
+.seat.flash {
+  animation: flash 1s ease-out;
+}
+@keyframes flash {
+  0% {
+    outline: 3px solid var(--gold-soft);
+    outline-offset: 3px;
+  }
+  100% {
+    outline: 3px solid transparent;
+    outline-offset: 10px;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .seat {
     transition: none;
+  }
+  .seat.flash {
+    animation: none;
   }
 }
 </style>

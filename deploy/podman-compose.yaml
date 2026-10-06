@@ -104,6 +104,7 @@ services:
       RESERVATION_TTL_SECONDS: "600"
       RESERVATION_WORKERS: "5"
       SWEEP_INTERVAL_SECONDS: "30"
+      ENABLE_MAP_RESET: "false"
       ALLOWED_ORIGINS: http://localhost:3000,http://localhost:8081
     ports:
       - "8080:8080"

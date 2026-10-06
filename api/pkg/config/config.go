@@ -15,6 +15,9 @@ type Config struct {
 	AllowedOrigins       map[string]bool
 	ReservationWorkers   int
 	SweepIntervalSeconds int
+	// EnableMapReset activa POST /events/{id}/reset (reinicia el mapa de
+	// asientos). Solo para desarrollo/demos: por defecto está apagado.
+	EnableMapReset bool
 }
 
 func Load() Config {
@@ -36,6 +39,7 @@ func Load() Config {
 		AllowedOrigins:       allowed,
 		ReservationWorkers:   getEnvInt("RESERVATION_WORKERS", 5),
 		SweepIntervalSeconds: getEnvInt("SWEEP_INTERVAL_SECONDS", 30),
+		EnableMapReset:       getEnvBool("ENABLE_MAP_RESET", false),
 	}
 }
 
@@ -50,6 +54,15 @@ func getEnvInt(key string, fallback int) int {
 	if v := os.Getenv(key); v != "" {
 		if n, err := strconv.Atoi(v); err == nil {
 			return n
+		}
+	}
+	return fallback
+}
+
+func getEnvBool(key string, fallback bool) bool {
+	if v := os.Getenv(key); v != "" {
+		if b, err := strconv.ParseBool(v); err == nil {
+			return b
 		}
 	}
 	return fallback

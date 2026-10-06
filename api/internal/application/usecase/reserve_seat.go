@@ -3,6 +3,8 @@ package usecase
 import (
 	"context"
 	"fmt"
+	"hash/fnv"
+	"sync"
 
 	usecasein "github.com/carlosmorales-dev-mx/ticketing-system/api/internal/application/port/in"
 	"github.com/carlosmorales-dev-mx/ticketing-system/api/internal/application/port/out"
@@ -21,6 +23,22 @@ type reserveSeatUseCase struct {
 	reservationCache out.ReservationCache
 	publisher        out.EventPublisher
 	notifier         out.RealtimeNotifier
+	userLocks        [userLockStripes]sync.Mutex
+}
+
+// userLockStripes: cantidad fija de candados. Un usuario siempre cae en
+// el mismo, así que sus reservas se procesan de una en una (los 5
+// workers de la sala de espera podrían tomar 4 peticiones suyas a la
+// vez y saltarse el límite). Usuarios distintos casi nunca comparten
+// candado y, si lo hacen, solo esperan unos milisegundos.
+const userLockStripes = 64
+
+func (uc *reserveSeatUseCase) lockUser(userID shared.ID) func() {
+	h := fnv.New32a()
+	_, _ = h.Write([]byte(userID.String()))
+	m := &uc.userLocks[h.Sum32()%userLockStripes]
+	m.Lock()
+	return m.Unlock
 }
 
 func NewReserveSeatUseCase(
@@ -40,6 +58,24 @@ func NewReserveSeatUseCase(
 }
 
 func (uc *reserveSeatUseCase) Execute(ctx context.Context, cmd usecasein.ReserveSeatCommand) (*usecasein.ReserveSeatResult, error) {
+	// 0. Límite por usuario: máximo reservation.MaxPendingPerUser
+	//    asientos apartados a la vez. El candado por usuario evita que
+	//    varias peticiones simultáneas suyas pasen la comprobación juntas.
+	//    Limitación conocida: protege dentro de UNA instancia de la API;
+	//    con varias réplicas haría falta un conteo atómico en la BD.
+	defer uc.lockUser(cmd.UserID)()
+
+	pending, err := uc.reservationRepo.CountPendingByUser(ctx, cmd.EventID, cmd.UserID)
+	if err != nil {
+		return nil, fmt.Errorf("error contando reservas del usuario: %w", err)
+	}
+	if pending >= reservation.MaxPendingPerUser {
+		return nil, shared.NewDomainError(
+			"MAX_SEATS_PER_USER",
+			fmt.Sprintf("solo puedes apartar hasta %d asientos a la vez", reservation.MaxPendingPerUser),
+		)
+	}
+
 	// 1. Intento ATÓMICO de reserva contra Postgres. Este es el punto
 	//    donde se decide, bajo concurrencia real, quién gana la carrera.
 	//    La implementación concreta (adapters/out/postgres) debe usar

@@ -12,15 +12,15 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/carlosmorales-dev-mx/ticketing-system/api/internal/adapters/in/amqpconsumer"
 	httpadapter "github.com/carlosmorales-dev-mx/ticketing-system/api/internal/adapters/in/http"
 	"github.com/carlosmorales-dev-mx/ticketing-system/api/internal/adapters/in/http/handler"
 	wsadapter "github.com/carlosmorales-dev-mx/ticketing-system/api/internal/adapters/in/websocket"
-	"github.com/carlosmorales-dev-mx/ticketing-system/api/internal/adapters/in/amqpconsumer"
 	postgresadapter "github.com/carlosmorales-dev-mx/ticketing-system/api/internal/adapters/out/postgres"
 	rabbitadapter "github.com/carlosmorales-dev-mx/ticketing-system/api/internal/adapters/out/rabbitmq"
 	redisadapter "github.com/carlosmorales-dev-mx/ticketing-system/api/internal/adapters/out/redis"
-	"github.com/carlosmorales-dev-mx/ticketing-system/api/internal/application/port/out"
 	usecasein "github.com/carlosmorales-dev-mx/ticketing-system/api/internal/application/port/in"
+	"github.com/carlosmorales-dev-mx/ticketing-system/api/internal/application/port/out"
 	"github.com/carlosmorales-dev-mx/ticketing-system/api/internal/application/usecase"
 	"github.com/carlosmorales-dev-mx/ticketing-system/api/pkg/config"
 )
@@ -81,6 +81,7 @@ func run() error {
 	seatRepo := postgresadapter.NewSeatRepository(pool)
 	reservationRepo := postgresadapter.NewReservationRepository(pool)
 	ticketRepo := postgresadapter.NewTicketRepository(pool)
+	resetRepo := postgresadapter.NewEventResetRepository(pool)
 	reservationCache := redisadapter.NewReservationCache(redisClient)
 	hub := wsadapter.NewHub()
 
@@ -90,6 +91,11 @@ func run() error {
 	releaseExpired := usecase.NewReleaseExpiredReservationUseCase(reservationRepo, seatRepo, hub)
 	listSeats := usecase.NewListAvailableSeatsUseCase(seatRepo)
 	cancelReservation := usecase.NewCancelReservationUseCase(reservationRepo, seatRepo, reservationCache, hub)
+
+	resetEvent := usecase.NewResetEventUseCase(resetRepo, reservationCache, hub)
+	if cfg.EnableMapReset {
+		log.Println("AVISO: ENABLE_MAP_RESET=true -> POST /events/{id}/reset está activo (solo desarrollo)")
+	}
 
 	// --- 3. Sala de espera virtual: workers que SÍ ejecutan el caso
 	//     de uso, consumiendo la cola que alimenta reservationQueue ---
@@ -122,6 +128,8 @@ func run() error {
 		ConfirmPayment:    confirmPayment,
 		CancelReservation: cancelReservation,
 		ListSeats:         listSeats,
+		ResetEvent:        resetEvent,
+		EnableMapReset:    cfg.EnableMapReset,
 		Hub:               hub,
 		AllowedOrigins:    cfg.AllowedOrigins,
 		HealthChecks: map[string]handler.PingFunc{

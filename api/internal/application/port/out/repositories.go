@@ -38,6 +38,28 @@ type ReservationRepository interface {
 	// libera cualquier reserva PENDING cuyo TTL ya pasó pero cuyo
 	// evento de expiración se perdió (reinicio de Redis, red, etc.).
 	FindExpiredPending(ctx context.Context, before time.Time) ([]shared.ID, error)
+	// CountPendingByUser cuenta las reservas PENDING todavía vigentes
+	// (expires_at en el futuro) de un usuario en un evento. Se usa para
+	// aplicar reservation.MaxPendingPerUser.
+	CountPendingByUser(ctx context.Context, eventID, userID shared.ID) (int, error)
+}
+
+// EventResetResult describe qué cambió al reiniciar un evento, para que
+// el caso de uso pueda limpiar Redis y avisar por WebSocket.
+type EventResetResult struct {
+	// ReleasedSeatIDs son los asientos que NO estaban AVAILABLE y
+	// ahora lo están (reservados o vendidos hasta ese momento).
+	ReleasedSeatIDs []shared.ID
+	// PendingReservationIDs son las reservas PENDING que se borraron;
+	// sus claves de TTL en Redis ya no tienen sentido.
+	PendingReservationIDs []shared.ID
+}
+
+// EventResetRepository es el puerto de la herramienta de desarrollo
+// "reiniciar mapa": deja el evento como recién sembrado. Debe ser una
+// sola transacción: o queda todo limpio o no cambia nada.
+type EventResetRepository interface {
+	ResetEvent(ctx context.Context, eventID shared.ID) (*EventResetResult, error)
 }
 
 type TicketRepository interface {

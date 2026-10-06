@@ -2,6 +2,7 @@ import type {
   Seat,
   ReserveSeatResponse,
   ConfirmPaymentResponse,
+  ResetEventResponse,
   ApiErrorResponse,
 } from "~/types/ticketing";
 import { ApiError } from "~/types/ticketing";
@@ -12,9 +13,9 @@ export function useApi() {
 
   // Wrapper central: cualquier respuesta no-2xx se traduce a
   // ApiError con el código exacto que documenta el openapi.yaml
-  // (SEAT_ALREADY_RESERVED, RATE_LIMITED, RESERVATION_NOT_PENDING...).
-  // Así los componentes hacen `catch (e) { if (e.code === '...') }`
-  // en vez de parsear mensajes de texto.
+  // (SEAT_ALREADY_RESERVED, MAX_SEATS_PER_USER, RATE_LIMITED,
+  // RESERVATION_NOT_PENDING...). Así los componentes hacen
+  // `catch (e) { if (e.code === '...') }` en vez de parsear mensajes.
   async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     const res = await fetch(`${base}${path}`, {
       ...options,
@@ -45,6 +46,12 @@ export function useApi() {
       return request<ConfirmPaymentResponse>(`/reservations/${reservationId}/confirm`, {
         method: "POST",
       });
+    },
+
+    // Herramienta de desarrollo: deja el mapa como nuevo. El backend
+    // responde 403 MAP_RESET_DISABLED si no se arrancó con ENABLE_MAP_RESET=true.
+    resetEvent(eventId: string) {
+      return request<ResetEventResponse>(`/events/${eventId}/reset`, { method: "POST" });
     },
 
     // El backend responde 204 sin body, así que no usamos el helper

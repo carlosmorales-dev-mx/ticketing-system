@@ -4,6 +4,11 @@ COMPOSE       := podman-compose -f deploy/podman-compose.yaml
 API_DIR       := api
 BINARY        := bin/api
 
+# Herramienta de desarrollo: POST /events/{id}/reset (botón "Reiniciar mapa").
+# Para apagarla: make dev-full ENABLE_MAP_RESET=false
+ENABLE_MAP_RESET ?= true
+export ENABLE_MAP_RESET
+
 .PHONY: help
 help: ## Muestra esta ayuda
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \

@@ -30,3 +30,7 @@ type ConfirmPaymentResponse struct {
 type ErrorResponse struct {
 	Error string `json:"error"`
 }
+
+type ResetEventResponse struct {
+	ReleasedSeats int `json:"released_seats"`
+}

@@ -30,9 +30,9 @@ func writeError(w http.ResponseWriter, err error) {
 
 func statusForCode(code string) int {
 	switch code {
-	case "SEAT_ALREADY_RESERVED", "SEAT_NOT_RESERVED", "RESERVATION_NOT_PENDING":
+	case "SEAT_ALREADY_RESERVED", "SEAT_NOT_RESERVED", "RESERVATION_NOT_PENDING", "MAX_SEATS_PER_USER":
 		return http.StatusConflict // 409
-	case "SEAT_NOT_FOUND", "RESERVATION_NOT_FOUND", "TICKET_NOT_FOUND":
+	case "SEAT_NOT_FOUND", "RESERVATION_NOT_FOUND", "TICKET_NOT_FOUND", "EVENT_NOT_FOUND":
 		return http.StatusNotFound // 404
 	case "INVALID_ID", "INVALID_EVENT_NAME", "INVALID_EVENT_DATE", "VALIDATION_ERROR":
 		return http.StatusBadRequest // 400

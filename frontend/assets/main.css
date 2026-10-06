@@ -1,68 +1,124 @@
+/* Tokens del diseño. Los componentes usan solo estas variables. */
 :root {
-  --bg-deep: #0f0f16;
-  --bg-panel: #161622;
-  --cyan: #01e1ee;
-  --cyan-glow: 0 0 15px #01e1ee, 0 0 30px #01e1ee66;
-  --pink: #fc2c93;
-  --pink-glow: 0 0 15px #fc2c93, 0 0 30px #fc2c9366;
-  --yellow: #fed52f;
-  --yellow-glow: 0 0 15px #fed52f, 0 0 30px #fed52f66;
-  --grey: #2a2a35;
-  --text-main: #ffffff;
-  --text-dark: #0f0f16;
-  --text-muted: #8b8b9e;
-  --border-heavy: 3px solid #0f0f16;
-  --shadow-hard: 6px 6px 0px #0f0f16;
-  --radius: 8px;
-  --transition: 0.15s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  --bg: #0a0f1f;
+  --panel: #101830;
+  --panel-2: #16203d;
+  --line: #26324f;
+  --text: #f4efe0;
+  --muted: #9aa4bf;
 
-  --font-display: "Orbitron", sans-serif;
-  --font-body: "Rajdhani", sans-serif;
-  --font-mono: "Space Mono", monospace;
+  --red: #c8222f;
+  --red-hi: #e13a49;
+  --red-deep: #7d111f;
+  --gold: #e9bd3c;
+  --gold-soft: #f4e2a1;
+
+  --seat-free: #f6efdc;
+  --seat-sold: #2c3652;
+
+  /* Boleto confirmado (hoja crema) */
+  --paper: #fbf4df;
+  --ink: #14213d;
+  --ink-muted: #6b6450;
+  --rule: #d9cda8;
+
+  --font-display: "Big Shoulders Display", "Arial Narrow", Impact, sans-serif;
+  --font-body: "Archivo", "Helvetica Neue", Arial, sans-serif;
+  --font-code: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+
+  color-scheme: dark;
 }
 
 * {
   box-sizing: border-box;
 }
 
-body {
-  margin: 0;
-  background: var(--bg-deep);
-  background-image: radial-gradient(circle at 50% 0%, #1c1c2b 0%, var(--bg-deep) 70%);
-  color: var(--text-main);
-  font-family: var(--font-body);
-  min-height: 100vh;
-  position: relative;
-  overflow-x: hidden;
+html {
+  background: var(--bg);
 }
 
-/* Línea de escaneo animada, cruzando toda la página de arriba a abajo. */
-body::before {
-  content: "";
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 4px;
-  background: linear-gradient(90deg, transparent, var(--cyan), var(--pink), var(--yellow), transparent);
-  filter: blur(2px);
-  animation: scanline 8s linear infinite;
-  opacity: 0.5;
-  z-index: 9999;
-  pointer-events: none;
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 15px;
+  line-height: 1.5;
 }
-@keyframes scanline {
-  0% {
-    top: -4px;
-  }
-  100% {
-    top: 100%;
-  }
+
+h1,
+h2,
+h3,
+p,
+dl,
+dd,
+ul {
+  margin: 0;
+  padding: 0;
+}
+ul {
+  list-style: none;
 }
 
 :focus-visible {
-  outline: 3px solid var(--cyan);
-  outline-offset: 2px;
+  outline: 2px solid var(--gold);
+  outline-offset: 3px;
+}
+
+/* Botones compartidos (reserva, historial, boleto) */
+.btn {
+  appearance: none;
+  border: 2px solid var(--red);
+  background: var(--red);
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 1rem;
+  font-weight: 600;
+  line-height: 1.2;
+  padding: 0.75rem 1.75rem;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background-color 0.15s, border-color 0.15s;
+}
+.btn:hover:not(:disabled) {
+  background: var(--red-hi);
+  border-color: var(--red-hi);
+}
+.btn:disabled {
+  background: var(--panel-2);
+  border-color: var(--panel-2);
+  color: var(--muted);
+  cursor: default;
+}
+.btn--ghost {
+  background: transparent;
+  border-color: var(--line);
+  color: var(--text);
+}
+.btn--ghost:hover:not(:disabled) {
+  background: transparent;
+  border-color: var(--text);
+}
+.btn--small {
+  padding: 0.4rem 1rem;
+  font-size: 0.85rem;
+}
+
+.link-btn {
+  appearance: none;
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--muted);
+  font-family: var(--font-body);
+  font-size: 0.82rem;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.link-btn:hover {
+  color: var(--text);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -75,7 +131,7 @@ body::before {
   }
 }
 
-/* Al imprimir (o "Guardar como PDF") el ticket, se oculta todo lo
+/* Al imprimir (o "Guardar como PDF") el boleto se oculta todo lo
    demás. .ticket-print-area vive en TicketModal.vue. */
 @media print {
   body * {
@@ -89,7 +145,11 @@ body::before {
     position: absolute;
     top: 0;
     left: 0;
-    width: 100%;
+    right: 0;
+    margin: 0 auto;
+    width: min(100%, 420px);
     box-shadow: none !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
   }
 }

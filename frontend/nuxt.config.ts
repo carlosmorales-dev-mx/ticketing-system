@@ -13,7 +13,7 @@ export default defineNuxtConfig({
         { rel: "preconnect", href: "https://fonts.gstatic.com", crossorigin: "" },
         {
           rel: "stylesheet",
-          href: "https://fonts.googleapis.com/css2?family=Orbitron:wght@700;900&family=Rajdhani:wght@500;700&family=Space+Mono:wght@400;700&display=swap",
+          href: "https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=Big+Shoulders+Display:wght@700;800&family=IBM+Plex+Mono:wght@500&display=swap",
         },
       ],
     },
@@ -26,6 +26,11 @@ export default defineNuxtConfig({
     public: {
       apiBase: process.env.NUXT_PUBLIC_API_BASE || "http://localhost:8080",
       wsBase: process.env.NUXT_PUBLIC_WS_BASE || "ws://localhost:8080",
+      // Botón "Reiniciar mapa": herramienta de desarrollo. Visible en dev,
+      // oculto en producción salvo que NUXT_PUBLIC_ENABLE_RESET=true.
+      enableReset: process.env.NUXT_PUBLIC_ENABLE_RESET
+        ? process.env.NUXT_PUBLIC_ENABLE_RESET === "true"
+        : process.env.NODE_ENV !== "production",
     },
   },
 });

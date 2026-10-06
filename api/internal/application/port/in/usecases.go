@@ -55,6 +55,22 @@ type CancelReservationUseCase interface {
 	Execute(ctx context.Context, cmd CancelReservationCommand) error
 }
 
+type ResetEventCommand struct {
+	EventID shared.ID
+}
+
+type ResetEventResult struct {
+	ReleasedSeats int
+}
+
+// ResetEventUseCase deja el mapa de un evento como nuevo: todos los
+// asientos AVAILABLE, sin reservas ni boletos. Es una herramienta de
+// desarrollo/demo; el adaptador HTTP la deja apagada salvo que se
+// active ENABLE_MAP_RESET.
+type ResetEventUseCase interface {
+	Execute(ctx context.Context, cmd ResetEventCommand) (*ResetEventResult, error)
+}
+
 type SeatSummary struct {
 	SeatID shared.ID
 	Row    int

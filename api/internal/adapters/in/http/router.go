@@ -16,6 +16,8 @@ type RouterConfig struct {
 	ConfirmPayment    usecasein.ConfirmPaymentUseCase
 	CancelReservation usecasein.CancelReservationUseCase
 	ListSeats         usecasein.ListAvailableSeatsUseCase
+	ResetEvent        usecasein.ResetEventUseCase
+	EnableMapReset    bool // ENABLE_MAP_RESET: herramienta de desarrollo, apagada por defecto
 	Hub               *wsadapter.Hub
 	AllowedOrigins    map[string]bool
 	HealthChecks      map[string]handler.PingFunc
@@ -30,8 +32,11 @@ func NewRouter(cfg RouterConfig) http.Handler {
 	seatHandler := handler.NewSeatHandler(cfg.ListSeats)
 	reservationHandler := handler.NewReservationHandler(cfg.ReserveSeat, cfg.ConfirmPayment, cfg.CancelReservation)
 
+	eventHandler := handler.NewEventHandler(cfg.ResetEvent, cfg.EnableMapReset)
+
 	mux.HandleFunc("GET /health", handler.Health(cfg.HealthChecks))
 	mux.HandleFunc("GET /events/{eventID}/seats", seatHandler.ListSeats)
+	mux.HandleFunc("POST /events/{eventID}/reset", eventHandler.Reset)
 	mux.HandleFunc("POST /reservations", reservationHandler.Reserve)
 	mux.HandleFunc("POST /reservations/{reservationID}/confirm", reservationHandler.Confirm)
 	mux.HandleFunc("POST /reservations/{reservationID}/cancel", reservationHandler.Cancel)

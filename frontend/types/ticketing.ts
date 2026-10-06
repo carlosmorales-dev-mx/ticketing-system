@@ -16,6 +16,10 @@ export interface ConfirmPaymentResponse {
   ticket_id: string;
 }
 
+export interface ResetEventResponse {
+  released_seats: number;
+}
+
 export interface ApiErrorResponse {
   error: string;
 }

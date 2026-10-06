@@ -70,6 +70,49 @@ paths:
         "400":
           $ref: "#/components/responses/BadRequest"
 
+  /events/{eventId}/reset:
+    post:
+      tags: [Seats]
+      summary: Reinicia el mapa de asientos (solo desarrollo)
+      description: >
+        Deja el evento como recién sembrado: todos los asientos vuelven a
+        `AVAILABLE` y se borran sus reservas y boletos. Avisa por WebSocket
+        a los clientes conectados. Solo funciona si la API se arrancó con
+        `ENABLE_MAP_RESET=true`; si no, responde `403 MAP_RESET_DISABLED`.
+      operationId: resetEvent
+      parameters:
+        - $ref: "#/components/parameters/EventId"
+      responses:
+        "200":
+          description: Mapa reiniciado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  released_seats:
+                    type: integer
+                    description: Cuántos asientos dejaron de estar reservados o vendidos
+                    example: 12
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          description: La herramienta está apagada en este servidor
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error: MAP_RESET_DISABLED
+        "404":
+          description: El evento no existe
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error: EVENT_NOT_FOUND
+
   /reservations:
     post:
       tags: [Reservations]
@@ -80,7 +123,9 @@ paths:
         uno recibirá `201 Created` y el resto recibirá `409 Conflict`
         con `SEAT_ALREADY_RESERVED`. La reserva expira automáticamente
         a los 10 minutos si no se confirma el pago vía
-        `POST /reservations/{id}/confirm`.
+        `POST /reservations/{id}/confirm`. Cada usuario puede tener como
+        máximo 3 reservas `PENDING` vigentes por evento; la cuarta recibe
+        `409` con `MAX_SEATS_PER_USER`.
       operationId: reserveSeat
       requestBody:
         required: true
@@ -113,8 +158,15 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
-              example:
-                error: SEAT_ALREADY_RESERVED
+              examples:
+                asiento_ocupado:
+                  summary: Otro usuario reservó primero
+                  value:
+                    error: SEAT_ALREADY_RESERVED
+                limite_por_usuario:
+                  summary: El usuario ya tiene 3 asientos apartados
+                  value:
+                    error: MAX_SEATS_PER_USER
         "429":
           $ref: "#/components/responses/TooManyRequests"
 

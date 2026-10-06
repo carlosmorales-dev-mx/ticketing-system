@@ -34,6 +34,12 @@ type Reservation struct {
 // luego el adaptador de Redis sea quien físicamente implemente el TTL.
 const DefaultTTL = 10 * time.Minute
 
+// MaxPendingPerUser es cuántos asientos puede tener apartados a la vez
+// un mismo usuario en un evento (regla de negocio de este proyecto:
+// máximo 3 boletos por persona). Cada asiento sigue siendo su propia
+// reserva con su propio TTL de DefaultTTL.
+const MaxPendingPerUser = 3
+
 func NewReservation(eventID, seatID, userID shared.ID) *Reservation {
 	now := time.Now()
 	return &Reservation{

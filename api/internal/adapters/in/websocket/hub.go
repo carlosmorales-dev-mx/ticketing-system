@@ -6,12 +6,31 @@ import (
 	"log"
 	"net/http"
 	"sync"
+	"time"
 
 	"github.com/gorilla/websocket"
 
 	"github.com/carlosmorales-dev-mx/ticketing-system/api/internal/application/port/out"
 	"github.com/carlosmorales-dev-mx/ticketing-system/api/internal/domain/shared"
 )
+
+// client envuelve la conexión con su propio candado de escritura:
+// gorilla/websocket NO permite escrituras concurrentes sobre una misma
+// conexión, y ahora un reinicio de mapa emite decenas de mensajes en
+// ráfaga mientras otras reservas también publican.
+type client struct {
+	conn *websocket.Conn
+	wmu  sync.Mutex
+}
+
+const writeWait = 5 * time.Second
+
+func (c *client) send(payload []byte) error {
+	c.wmu.Lock()
+	defer c.wmu.Unlock()
+	_ = c.conn.SetWriteDeadline(time.Now().Add(writeWait))
+	return c.conn.WriteMessage(websocket.TextMessage, payload)
+}
 
 type seatUpdateMessage struct {
 	EventID string `json:"event_id"`
@@ -23,11 +42,11 @@ type seatUpdateMessage struct {
 // se notifica a quien está viendo ese evento, no a todo el mundo).
 type Hub struct {
 	mu    sync.RWMutex
-	conns map[string]map[*websocket.Conn]struct{} // eventID -> set de conexiones
+	conns map[string]map[*client]struct{} // eventID -> set de conexiones
 }
 
 func NewHub() *Hub {
-	return &Hub{conns: make(map[string]map[*websocket.Conn]struct{})}
+	return &Hub{conns: make(map[string]map[*client]struct{})}
 }
 
 // upgrader controla la actualización HTTP -> WebSocket.
@@ -54,11 +73,12 @@ func (h *Hub) ServeWS(w http.ResponseWriter, r *http.Request, eventID string) {
 		return
 	}
 
+	cl := &client{conn: conn}
 	h.mu.Lock()
 	if h.conns[eventID] == nil {
-		h.conns[eventID] = make(map[*websocket.Conn]struct{})
+		h.conns[eventID] = make(map[*client]struct{})
 	}
-	h.conns[eventID][conn] = struct{}{}
+	h.conns[eventID][cl] = struct{}{}
 	h.mu.Unlock()
 
 	// Bucle de lectura: no esperamos mensajes del cliente, pero hay
@@ -67,7 +87,7 @@ func (h *Hub) ServeWS(w http.ResponseWriter, r *http.Request, eventID string) {
 	go func() {
 		defer func() {
 			h.mu.Lock()
-			delete(h.conns[eventID], conn)
+			delete(h.conns[eventID], cl)
 			h.mu.Unlock()
 			conn.Close()
 		}()
@@ -92,10 +112,10 @@ func (h *Hub) BroadcastSeatUpdate(ctx context.Context, eventID, seatID shared.ID
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 
-	for conn := range h.conns[eventID.String()] {
+	for cl := range h.conns[eventID.String()] {
 		// Best-effort: si un cliente concreto falla, no interrumpimos
 		// la notificación al resto.
-		if err := conn.WriteMessage(websocket.TextMessage, payload); err != nil {
+		if err := cl.send(payload); err != nil {
 			log.Printf("aviso: error enviando a un cliente websocket: %v", err)
 		}
 	}

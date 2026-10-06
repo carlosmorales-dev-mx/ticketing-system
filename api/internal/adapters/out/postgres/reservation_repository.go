@@ -130,3 +130,19 @@ func (r *reservationRepository) FindExpiredPending(ctx context.Context, before t
 	}
 	return ids, nil
 }
+
+// CountPendingByUser cuenta solo reservas vigentes: una PENDING cuyo
+// TTL ya pasó (y que el barrido aún no libera) no debe bloquear al
+// usuario para apartar otro asiento.
+func (r *reservationRepository) CountPendingByUser(ctx context.Context, eventID, userID shared.ID) (int, error) {
+	const q = `
+		SELECT count(*) FROM reservations
+		WHERE event_id = $1 AND user_id = $2
+		  AND status = 'PENDING' AND expires_at > now()`
+
+	var n int
+	if err := r.pool.QueryRow(ctx, q, eventID.String(), userID.String()).Scan(&n); err != nil {
+		return 0, fmt.Errorf("error contando reservas pendientes del usuario: %w", err)
+	}
+	return n, nil
+}
